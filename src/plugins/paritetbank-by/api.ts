@@ -54,7 +54,7 @@ export const getTransactions = async ({ sessionToken, fromDate, toDate }: { sess
     throw new BankMessageError(error.message)
   }
 
-  return data.operationHistory
+  return (data.operationHistory ?? [])
     .filter((op) => op.amount)
     .map((op) => convertTransaction(op, account))
 }

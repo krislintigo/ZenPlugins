@@ -138,5 +138,5 @@ export interface FetchTransactionsInput extends BaseFetchInput {
 }
 
 export interface FetchTransactionsOutput {
-  operationHistory: FetchTransaction[]
+  operationHistory?: FetchTransaction[]
 }
