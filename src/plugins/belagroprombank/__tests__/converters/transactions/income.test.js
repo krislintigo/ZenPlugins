@@ -125,6 +125,44 @@ describe('convertTransactions', () => {
           comment: 'Капитализация (%% тек.периода ко вкладу)'
         }
       ]
+    ],
+    [
+      [
+        {
+          accountType: '0',
+          concreteType: '0',
+          accountNumber: '3985550',
+          operationName: 'Капитализация',
+          transactionDate: 1613363520000,
+          operationDate: 1613363520000,
+          transactionAmount: 0.03,
+          transactionCurrency: '840',
+          operationAmount: 0.03,
+          operationCurrency: '840',
+          operationSign: '1',
+          actionGroup: 19,
+          clientName: 'Николаев Николай Николаевич',
+          operationClosingBalance: 4207.93,
+          operationCode: 999
+        }
+      ],
+      [
+        {
+          hold: false,
+          date: new Date(1613363520000),
+          movements: [
+            {
+              id: '1613363520000_0.03',
+              account: { id: 'account' },
+              invoice: null,
+              sum: 0.03,
+              fee: 0
+            }
+          ],
+          merchant: null,
+          comment: 'Капитализация'
+        }
+      ]
     ]
   ])('converts income transfers', (apiTransaction, transaction) => {
     expect(convertTransactions(apiTransaction, account)).toEqual(transaction)
