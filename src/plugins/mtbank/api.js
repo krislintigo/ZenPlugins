@@ -195,7 +195,7 @@ export async function fetchTransactions (sessionCookies, accounts, fromDate, toD
 
       operations.push(...flatMap(response.body.data, d => d.operations.map(op => ({
         ...op,
-        accountId: account.id,
+        accountId: d.accountId,
         description: op.description || ''
       }))))
     }
