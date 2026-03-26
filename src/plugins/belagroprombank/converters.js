@@ -229,7 +229,14 @@ export function convertTransactions (apiTransactions, account) {
 }
 
 function convertTransaction (apiTransaction, account) {
-  if (apiTransaction.operationSum === 0) {
+  /** Depends on the account type
+   * `sum` for cards
+   * `amount` for deposits
+   * **/
+  const operationSum = apiTransaction.operationSum ?? apiTransaction.operationAmount
+  const transactionSum = apiTransaction.transactionSum ?? apiTransaction.transactionAmount
+
+  if (operationSum === 0) {
     return null
   }
 
@@ -246,8 +253,8 @@ function convertTransaction (apiTransaction, account) {
     [
       /^.*Начисление процентов по.* долгу.*$/i
     ].some(regexp => regexp.test(apiTransaction.description)) ||
-      (apiTransaction.transactionSum && apiTransaction.transactionSum < 0) ||
-      (apiTransaction.operationSum && apiTransaction.operationSum < 0)
+      (transactionSum && transactionSum < 0) ||
+      (operationSum && operationSum < 0)
         ? -1
         : 1
 
@@ -258,9 +265,9 @@ function convertTransaction (apiTransaction, account) {
 
   const invoice = {
     instrument,
-    sum: Math.abs(apiTransaction.transactionCurrency && apiTransaction.transactionSum !== 0 ? apiTransaction.transactionSum : apiTransaction.operationSum) * sign
+    sum: Math.abs(apiTransaction.transactionCurrency && transactionSum !== 0 ? transactionSum : operationSum) * sign
   }
-  const sum = invoice.instrument === account.instrument ? invoice.sum : Math.abs(apiTransaction.operationSum) * sign
+  const sum = invoice.instrument === account.instrument ? invoice.sum : Math.abs(operationSum) * sign
   const dateInfo = apiTransaction.transactionDate ? apiTransaction.transactionDate : apiTransaction.operationDate
   const transaction = {
     hold: false,
