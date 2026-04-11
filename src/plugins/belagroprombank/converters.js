@@ -241,7 +241,8 @@ function convertTransaction (apiTransaction, account) {
   }
 
   const sign = apiTransaction.operationSign
-    ? Number(apiTransaction.operationSign)
+    // Convert to number or consider as expense (-1) if operationSign value is '0'
+    ? (Number(apiTransaction.operationSign) || -1)
     : [
         /^.*OPLATA USLUG.*$/i,
         /^.*Списание.*$/i,

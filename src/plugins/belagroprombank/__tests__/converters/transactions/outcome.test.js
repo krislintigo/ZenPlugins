@@ -397,6 +397,38 @@ describe('convertTransactions', () => {
           comment: 'Абонентская плата (Ежемесячная абонентская плата по БПК)'
         }
       ]
+    ],
+    // Transaction with `operationSign` is 0
+    [
+      [
+        {
+          operationName: 'Списание подоходного налога',
+          transactionDate: 1767230152000,
+          transactionSum: 0.0,
+          transactionCurrency: '933',
+          operationSign: '0',
+          operationDate: 1767575752000,
+          operationSum: 0.5
+        }
+      ],
+      [
+        {
+          hold: false,
+          date: new Date(1767230152000),
+          movements:
+            [
+              {
+                id: '1767230152000_-0.5',
+                account: { id: 'account' },
+                invoice: null,
+                sum: -0.5,
+                fee: 0
+              }
+            ],
+          merchant: null,
+          comment: 'Списание подоходного налога'
+        }
+      ]
     ]
   ])('converts outcome transfers', (apiTransaction, transaction) => {
     expect(convertTransactions(apiTransaction, account1)).toEqual(transaction)
