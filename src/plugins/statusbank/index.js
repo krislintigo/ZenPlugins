@@ -12,7 +12,10 @@ export async function scrape ({ preferences, fromDate, toDate }) {
   toDate = toDate || new Date()
   const token = await login(preferences.login, preferences.password)
 
-  let accounts = await allAccounts(token)
+  let accounts = await (await fetchAccounts(token))
+    .map(convertAccount)
+    .filter(account => account !== null)
+
   if (accounts.length === 0) {
     // если активация первый раз, но карточки все еще не выпущены
     return {
@@ -23,9 +26,10 @@ export async function scrape ({ preferences, fromDate, toDate }) {
 
   const transactionsStatement = []
   accounts = await Promise.all(accounts.map(async account => {
-    if (account.transactionsAccId) {
-      const mails = await fetchFullTransactions(token, account, fromDate, toDate)
-      const transactions = parseTransactions(mails)
+    if (account._meta.statementExecutionId) {
+      const htmls = await fetchFullTransactions(token, account, fromDate, toDate)
+      console.log('MAILD', htmls)
+      const transactions = parseTransactions(htmls)
       for (const apiTransaction of transactions) {
         const transaction = convertTransaction(apiTransaction, account)
         if (transaction) {
@@ -33,7 +37,7 @@ export async function scrape ({ preferences, fromDate, toDate }) {
         }
       }
     }
-    if (account.latestTrID) {
+    if (account._meta.lastTrxExecutionId) {
       const mails = await fetchDeposits(token, account)
       if (mails) {
         const transactions = parseDeposits(mails, fromDate)
@@ -47,15 +51,9 @@ export async function scrape ({ preferences, fromDate, toDate }) {
     }
     return account
   }))
+
   return {
     accounts,
     transactions: transactionsStatement
   }
-}
-
-async function allAccounts (token) {
-  const accounts = (await fetchAccounts(token))
-    .map(convertAccount)
-    .filter(account => account !== null)
-  return accounts
 }

@@ -93,57 +93,107 @@ export async function login (login, password) {
 
 export async function fetchAccounts (sid) {
   console.log('>>> Загрузка списка счетов...')
+
   const rawResponse = await fetchApi(BASE_URL,
     '<BS_Request>\r\n' +
     '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
-    '   <GetProducts ProductType="MS" GetActions="Y" GetBalance="Y"/>\r\n' +
-    '   <RequestType>GetProducts</RequestType>\r\n' +
+    '   <GetProductTypes GetProducts="Y" GetActions="Y" GetBalance="Y"/>\r\n' +
+    '   <RequestType>GetProductTypes</RequestType>\r\n' +
     '   <Session SID="' + sid + '"/>\r\n' +
     '   <Subsystem>ClientAuth</Subsystem>\r\n' +
     '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
     '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'), true)
+
   let resp = null
   xml2js.parseString(rawResponse, { mergeAttrs: true }, (err, result) => {
     resp = err ? null : result
   })
-  const accounts = []
+
+  console.log(resp)
+
+  let accounts = []
+
   if (resp) {
-    for (const account of resp.BS_Response.GetProducts[0].Product) {
-      const accountOperationsExecutionId = account.Action.filter((action) => action !== null).filter((action) => action.Type[0] === 'Group$MS$4')[0].Id[0]
-      const [statementResp, lastTrxResp] = await Promise.all([
-        // To receive transactions as statement for days up to last working day
-        fetchApi(BASE_URL,
-          '<BS_Request>\r\n' +
-          '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
-          '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
-          '   <Session SID="' + sid + '" IpAddress="" Prolong="Y"/>\r\n' +
-          '   <Subsystem>ClientAuth</Subsystem>\r\n' +
-          '   <RequestType>ExecuteAction</RequestType>\r\n' +
-          '   <ExecuteAction Id="' + accountOperationsExecutionId + '" Button="Submit" Validate="N">\r\n' +
-          '       <Parameter Id="SubActionId"><![CDATA[13485]]></Parameter>\r\n' +
-          '   </ExecuteAction>\r\n' +
-          '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request')),
-        // To receive latest transactions
-        fetchApi(BASE_URL,
-          '<BS_Request>\r\n' +
-          '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
-          '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
-          '   <Session SID="' + sid + '" IpAddress="" Prolong="Y"/>\r\n' +
-          '   <Subsystem>ClientAuth</Subsystem>\r\n' +
-          '   <RequestType>ExecuteAction</RequestType>\r\n' +
-          '   <ExecuteAction Id="' + accountOperationsExecutionId + '" Button="Submit" Validate="N">\r\n' +
-          '       <Parameter Id="SubActionId"><![CDATA[13486]]></Parameter>\r\n' +
-          '   </ExecuteAction>\r\n' +
-          '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
-      ])
-      accounts.push({
-        ...account,
-        statementExecutionId: statementResp.BS_Response.ExecuteAction.Action.Id,
-        lastTrxExecutionId: lastTrxResp.BS_Response.ExecuteAction.Action.Id
-      })
+    for (const group of resp.BS_Response.GetProductTypes[0].ProductType) {
+      if (!group.Product) continue
+
+      const productGroupType = group.Type[0]
+      accounts.push(...await Promise.all(group.Product.map(async (product) => {
+        switch (productGroupType) {
+          // Card
+          case 'MS': {
+            const accountOperationsExecutionId = product.Action.filter((action) => action !== null).filter((action) => action.Type[0] === 'Group$MS$4')[0].Id[0]
+            const [statementResp, lastTrxResp] = await Promise.all([
+              // To receive transactions as statement for days up to last working day
+              fetchApi(BASE_URL,
+                '<BS_Request>\r\n' +
+                '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
+                '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
+                '   <Session SID="' + sid + '" IpAddress="" Prolong="Y"/>\r\n' +
+                '   <Subsystem>ClientAuth</Subsystem>\r\n' +
+                '   <RequestType>ExecuteAction</RequestType>\r\n' +
+                '   <ExecuteAction Id="' + accountOperationsExecutionId + '" Button="Submit" Validate="N">\r\n' +
+                '       <Parameter Id="SubActionId"><![CDATA[13485]]></Parameter>\r\n' +
+                '   </ExecuteAction>\r\n' +
+                '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request')),
+              // To receive latest transactions
+              fetchApi(BASE_URL,
+                '<BS_Request>\r\n' +
+                '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
+                '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
+                '   <Session SID="' + sid + '" IpAddress="" Prolong="Y"/>\r\n' +
+                '   <Subsystem>ClientAuth</Subsystem>\r\n' +
+                '   <RequestType>ExecuteAction</RequestType>\r\n' +
+                '   <ExecuteAction Id="' + accountOperationsExecutionId + '" Button="Submit" Validate="N">\r\n' +
+                '       <Parameter Id="SubActionId"><![CDATA[13486]]></Parameter>\r\n' +
+                '   </ExecuteAction>\r\n' +
+                '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
+            ])
+
+            return {
+              ...product,
+              _meta: {
+                productGroupType,
+                statementExecutionId: statementResp.BS_Response.ExecuteAction.Action.Id,
+                lastTrxExecutionId: lastTrxResp.BS_Response.ExecuteAction.Action.Id
+              }
+            }
+          }
+
+          case 'ACCOUNT': {
+            // If account is a part of card
+            if (product.Subclass) return null
+
+            const statementExecutionId = product.Action.filter((action) => action !== null).filter((action) => action.Type[0] === 'B735:GetOrdering')[0].Id[0]
+
+            return {
+              ...product,
+              _meta: {
+                productGroupType,
+                statementExecutionId,
+                lastTrxExecutionId: null
+              }
+            }
+          }
+
+          case 'DEPOSIT': {
+            // TODO: add support later
+            return null
+          }
+
+          case 'CREDIT': {
+            // TODO: add support later
+            return null
+          }
+        }
+      })))
     }
   }
+
+  accounts = accounts.filter(Boolean)
+
   console.log(`>>> Загружено ${accounts.length} счетов.`)
+
   return accounts
 }
 
@@ -162,10 +212,10 @@ function transactionDate (date) {
   return String(('0' + date.getDate()).slice(-2) + '.' + ('0' + (date.getMonth() + 1)).slice(-2) + '.' + String(date.getFullYear()))
 }
 
-async function getTransactions (accountId, fromDate, toDate, sid) {
+async function getTransactions (actionId, fromDate, toDate, sid) {
   return await fetchApi(BASE_URL,
     '<BS_Request>\r\n' +
-    '   <ExecuteAction Id="' + accountId + '">\r\n' +
+    '   <ExecuteAction Id="' + actionId + '">\r\n' +
     '      <Parameter Id="DateFrom">' + fromDate + '</Parameter>\r\n' +
     '      <Parameter Id="DateTo">' + toDate + '</Parameter>\r\n' +
     '   </ExecuteAction>\r\n' +
@@ -183,49 +233,36 @@ export async function fetchFullTransactions (sid, account, fromDate, toDate = ne
   toDate.setDate(toDate.getDate())
 
   const dates = createDateIntervals(fromDate, toDate)
+
   const responses = await Promise.all(dates.map(async date => {
-    let response = await getTransactions(account.transactionsAccId, transactionDate(date[0]), transactionDate(date[1]), sid)
+    let response = await getTransactions(account._meta.statementExecutionId, transactionDate(date[0]), transactionDate(date[1]), sid)
     // if the response is failed by incorrect toDate we're recalculating it
     if (/\d{2}.\d{2}.\d{4}/.test(response)) {
-      response = await getTransactions(account.transactionsAccId, transactionDate(date[0]), response, sid)
+      response = await getTransactions(account._meta.statementExecutionId, transactionDate(date[0]), response, sid)
     }
     return response
   }))
-  const mailIDs = responses.map(response => {
+
+  const urls = responses.map(response => {
     if (response === null) {
       return null
     }
-    return response.BS_Response.ExecuteAction.MailId
+    return response.BS_Response.ExecuteAction.URL
   })
-  return await Promise.all(flatMap(mailIDs.filter(Boolean), (mailId) => {
-    return fetchApi(BASE_URL,
-      '<BS_Request>\r\n' +
-      '   <MailAttachment Id="' + mailId + '" No="0"/>\r\n' +
-      '   <RequestType>MailAttachment</RequestType>\r\n' +
-      '   <Session SID="' + sid + '"/>\r\n' +
-      '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
-      '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
-      '   <Subsystem>ClientAuth</Subsystem>\r\n' +
-      '   <TerminalCapabilities>\r\n' +
-      '       <LongParameter>Y</LongParameter>\r\n' +
-      '       <ScreenWidth>99</ScreenWidth>\r\n' +
-      '       <AnyAmount>Y</AnyAmount>\r\n' +
-      '       <BooleanParameter>Y</BooleanParameter>\r\n' +
-      '       <CheckWidth>39</CheckWidth>\r\n' +
-      '       <InputDataSources>\r\n' +
-      '           <InputDataSource>Lookup</InputDataSource>\r\n' +
-      '       </InputDataSources>\r\n' +
-      '   </TerminalCapabilities>\r\n' +
-      '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
+
+  return Promise.all(flatMap(urls.filter(Boolean), async (url) => {
+    const urlResponse = await fetch(url)
+    return urlResponse.body
   }))
 }
 
-export function parseTransactions (mails) {
-  const transactions = flatMap(mails, mail => {
-    const data = mail.BS_Response.MailAttachment.Attachment.Body
-    return parseFullTransactionsMail(data)
+export function parseTransactions (htmls) {
+  const transactions = flatMap(htmls, html => {
+    return parseFullTransactionsMail(html)
   })
+
   console.log(`>>> Загружено ${transactions.length} операций.`)
+
   return transactions
 }
 
@@ -294,55 +331,57 @@ export function parseFullTransactionsMail (html) {
       }
     }
   })
+  console.log(data)
   return data
 }
 
 // Экспорт пополнений карточки
-
 export async function fetchDeposits (sid, account) {
   console.log('>>> Загрузка списка пополнений...')
+
   const response = await fetchApi(BASE_URL,
     '<BS_Request>\r\n' +
-    '   <ExecuteAction Id="' + account.latestTrID + '"/>\r\n' +
+    '   <ExecuteAction Id="' + account._meta.lastTrxExecutionId + '"/>\r\n' +
     '   <RequestType>ExecuteAction</RequestType>\r\n' +
     '   <Session SID="' + sid + '"/>\r\n' +
     '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
     '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
     '   <Subsystem>ClientAuth</Subsystem>\r\n' +
     '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
-  if (response) {
-    const isMailAttachment = !!response.BS_Response.ExecuteAction.MailId
-    if (isMailAttachment) {
-      const mailResponse = await fetchApi(BASE_URL,
-        '<BS_Request>\r\n' +
-        '   <MailAttachment Id="' + response.BS_Response.ExecuteAction.MailId + '" No="0"/>\r\n' +
-        '   <RequestType>MailAttachment</RequestType>\r\n' +
-        '   <Session SID="' + sid + '"/>\r\n' +
-        '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
-        '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
-        '   <Subsystem>ClientAuth</Subsystem>\r\n' +
-        '   <TerminalCapabilities>\r\n' +
-        '       <LongParameter>Y</LongParameter>\r\n' +
-        '       <ScreenWidth>99</ScreenWidth>\r\n' +
-        '       <AnyAmount>Y</AnyAmount>\r\n' +
-        '       <BooleanParameter>Y</BooleanParameter>\r\n' +
-        '       <CheckWidth>39</CheckWidth>\r\n' +
-        '       <InputDataSources>\r\n' +
-        '           <InputDataSource>Lookup</InputDataSource>\r\n' +
-        '       </InputDataSources>\r\n' +
-        '   </TerminalCapabilities>\r\n' +
-        '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
-      return mailResponse.BS_Response.MailAttachment.Attachment.Body
-    } else {
-      const urlResponse = await fetch(response.BS_Response.ExecuteAction.URL)
-      return urlResponse.body
-    }
+
+  if (!response) return null
+
+  const isMailAttachment = !!response.BS_Response.ExecuteAction.MailId
+
+  if (isMailAttachment) {
+    const mailResponse = await fetchApi(BASE_URL,
+      '<BS_Request>\r\n' +
+      '   <MailAttachment Id="' + response.BS_Response.ExecuteAction.MailId + '" No="0"/>\r\n' +
+      '   <RequestType>MailAttachment</RequestType>\r\n' +
+      '   <Session SID="' + sid + '"/>\r\n' +
+      '   <TerminalId>stbank.ibank</TerminalId>\r\n' +
+      '   <TerminalTime>' + terminalTime() + '</TerminalTime>\r\n' +
+      '   <Subsystem>ClientAuth</Subsystem>\r\n' +
+      '   <TerminalCapabilities>\r\n' +
+      '       <LongParameter>Y</LongParameter>\r\n' +
+      '       <ScreenWidth>99</ScreenWidth>\r\n' +
+      '       <AnyAmount>Y</AnyAmount>\r\n' +
+      '       <BooleanParameter>Y</BooleanParameter>\r\n' +
+      '       <CheckWidth>39</CheckWidth>\r\n' +
+      '       <InputDataSources>\r\n' +
+      '           <InputDataSource>Lookup</InputDataSource>\r\n' +
+      '       </InputDataSources>\r\n' +
+      '   </TerminalCapabilities>\r\n' +
+      '</BS_Request>\r\n', {}, response => true, message => new InvalidPreferencesError('bad request'))
+    return mailResponse.BS_Response.MailAttachment.Attachment.Body
+  } else {
+    const urlResponse = await fetch(response.BS_Response.ExecuteAction.URL)
+    return urlResponse.body
   }
-  return null
 }
 
 export function parseDeposits (mail, fromDate) {
-  const transactions = parseDepositsMail(mail).filter((transaction) => transaction.amountReal > 0).filter((transaction) => {
+  const transactions = parseDepositsMail(mail).filter((transaction) => {
     const [day, month, year] = transaction.date.match(/(\d{2}).(\d{2}).(\d{4})/).slice(1)
     return (new Date(`${year}-${month}-${day}`) > fromDate)
   })

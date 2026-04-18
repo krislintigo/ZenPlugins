@@ -4,25 +4,35 @@ export function convertAccount (ob) {
   if (ob.Enabled && ob.Enabled[0] === 'N') {
     return null
   }
-  const id = ob.Id[0].split('-')[0]
-  if (!ZenMoney.isAccountSkipped(id)) {
-    return {
-      id,
-      transactionsAccId: ob.statementExecutionId,
-      type: 'card',
-      title: ob.ProductTypeName[0] + '*' + ob.No[0].slice(-4),
-      currencyCode: ob.Currency[0],
-      cardNumber: ob.No[0],
-      instrument: codeToCurrencyLookup[ob.Currency[0]],
-      balance: Number.parseFloat((ob.Balance[0].replace(/,/g, '.') || 0.0)),
-      syncID: [ob.No[0].slice(-4)],
-      productId: ob.Id[0],
-      productType: ob.ProductType[0],
-      accountID: Number(ob.BankId[0].split('-')[-1]),
-      latestTrID: ob.lastTrxExecutionId
+
+  const id = ob.BankId[0]
+
+  if (ZenMoney.isAccountSkipped(id)) return null
+
+  switch (ob._meta.productGroupType) {
+    case 'MS': {
+      return {
+        id,
+        type: 'ccard',
+        title: ob.ProductTypeName[0] + '*' + ob.No[0].slice(-4),
+        instrument: codeToCurrencyLookup[ob.Currency[0]],
+        syncIds: [ob.No[0].slice(-4)],
+        balance: Number.parseFloat((ob.Balance[0].replace(/,/g, '.') || 0.0)),
+        _meta: ob._meta
+      }
+    }
+      case 'ACCOUNT': {
+        return {
+          id,
+          type: 'checking',
+          title: `${ob.ProductTypeName[0]} (${ob.No[0]})`,
+          instrument: codeToCurrencyLookup[ob.Currency[0]],
+          syncIds: [id], // TODO: clarify
+          balance: Number.parseFloat((ob.Balance[0].replace(/,/g, '.') || 0.0)),
+          _meta: ob._meta
+      }
     }
   }
-  return null
 }
 
 export function convertTransaction (apiTransaction, account) {
