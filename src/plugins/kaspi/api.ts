@@ -217,13 +217,14 @@ function parseDepositTransactions (text: string, statementUid: string): Statemen
     let rest = line.slice(dateMatch[0].length)
     rest = rest.trimStart()
     const amountMatch = rest.match(/^([+-])\s*([$\d\s.,]+)/)
-    if (amountMatch == null) {
-      return null
+    let amount = ''
+    if (amountMatch != null) {
+      const sign = amountMatch[1]
+      const amountRaw = amountMatch[2].trim()
+      amount = `${sign} ${amountRaw}`
+      rest = rest.slice(amountMatch[0].length).trim()
+      rest = rest.replace(/^₸\s?/, '').trim()
     }
-    const sign = amountMatch[1]
-    const amountRaw = amountMatch[2].trim()
-    rest = rest.slice(amountMatch[0].length).trim()
-    rest = rest.replace(/^₸\s?/, '').trim()
     const balanceMatch = rest.match(/(\$?\d[\d\s]*,\d{2}(?:\s?₸)?)$/)
     if (balanceMatch != null) {
       rest = rest.slice(0, rest.length - balanceMatch[1].length).trim()
@@ -240,11 +241,14 @@ function parseDepositTransactions (text: string, statementUid: string): Statemen
         }
       }
     }
+    if (amount === '' && /Продление депозита/i.test(description)) {
+      return null
+    }
     return {
       hold: false,
       date: parseDateFromPdfText(line),
       originalAmount: null,
-      amount: `${sign} ${amountRaw}`,
+      amount,
       description: description === '' ? null : description,
       statementUid,
       originString: line
@@ -296,12 +300,13 @@ function parseTransactions (text: string, accountType: string, statementUid: str
   let baseRegexp: RegExp
   let originalAmountRegExpIndex = 5
   let descriptionRegExpIndex = 4
+  const originalAmountPattern = '(\\(\\s*[-+]?\\s?[\\d\\s.,]+\\s?[A-Z]{3}\\))?'
   if (locale === 'en') {
-    baseRegexp = /^(\d{2}\.\d{2}\.\d{2})\s*([+-]\s?[\d\s.,]+)\s*\W+(\w+)\s+(.+)\s?(\([-+]?[\d.,]+\s?[A-Z]{3}\))?/
+    baseRegexp = new RegExp(`^(\\d{2}\\.\\d{2}\\.\\d{2})\\s*([+-]\\s?[\\d\\s.,]+)\\s*\\W+(\\w+)\\s+(.+)\\s?${originalAmountPattern}`)
   } else if (locale === 'ru') {
-    baseRegexp = /^(\d{2}\.\d{2}\.\d{2})\s*([+-]\s?[\d\s.,]+)\s*[^а-яА-Я]+([а-яА-Я]+)\s+(.+)\s?(\([-+]?[\d.,]+\s?[A-Z]{3}\))?/
+    baseRegexp = new RegExp(`^(\\d{2}\\.\\d{2}\\.\\d{2})\\s*([+-]\\s?[\\d\\s.,]+)\\s*[^а-яА-Я]+([а-яА-Я]+)\\s+(.+)\\s?${originalAmountPattern}`)
   } else {
-    baseRegexp = /^(\d{2}\.\d{2}\.\d{2})\s*([+-]\s?[\d\s.,]+)\s*[^а-яА-Я\s]+\s{2,}((\S+\s)+)\s{2,}((\S+ {0,2})+)(\s\([^)]+\))?/
+    baseRegexp = /^(\d{2}\.\d{2}\.\d{2})\s*([+-]\s?[\d\s.,]+)\s*[^а-яА-Я\s]+\s{2,}((\S+\s)+)\s{2,}((\S+ {0,2})+)(\s\(\s*[-+]?\s?[\d\s.,]+\s?[A-Z]{3}\))?/
     originalAmountRegExpIndex = 7
     descriptionRegExpIndex = 5
   }
@@ -349,6 +354,18 @@ export function parseSinglePdfString (text: string, statementUid?: string): { ac
   return parsedContent
 }
 
+export async function readPdfTextsSequentially (
+  blobs: Blob[],
+  readPdf: typeof parsePdf = parsePdf
+): Promise<string[]> {
+  const pdfStrings: string[] = []
+  for (const blob of blobs) {
+    const { text } = await readPdf(blob)
+    pdfStrings.push(text)
+  }
+  return pdfStrings
+}
+
 async function showHowTo (): Promise<ObjectWithAnyProps> {
   let result
   if (ZenMoney.getData('showHowTo') !== false) {
@@ -369,14 +386,21 @@ async function showHowTo (): Promise<ObjectWithAnyProps> {
   return { shouldPickDocs: result }
 }
 
-function isKaspiStatement (text: string): boolean {
-  if (/Kaspi Bank/i.test(text)) {
+export function isKaspiStatement (text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ')
+  const hasStatementMarkers = /(ВЫПИСКА|ҮЗІНДІ КӨШІРМЕ|statement balance for the period|По Депозиту|Kaspi Gold)/i.test(normalized)
+  if (!hasStatementMarkers) {
+    return false
+  }
+  if (/Kaspi Bank|kaspi\.kz/i.test(normalized)) {
     return true
   }
-  if (/kaspi\.kz/i.test(text)) {
-    return /(ВЫПИСКА|ҮЗІНДІ КӨШІРМЕ|statement balance for the period|По Депозиту|Kaspi Gold)/i.test(text)
-  }
-  return false
+
+  // Some Kaspi deposit PDFs do not include bank name or kaspi.kz in extracted text.
+  return /По\s+Депозиту\s+за\s+период/i.test(normalized) &&
+    /Номер\s+договора/i.test(normalized) &&
+    /Номер\s+счета/i.test(normalized) &&
+    /На\s+Депозите/i.test(normalized)
 }
 
 export async function parsePdfStatements (): Promise<null | Array<{ account: StatementAccount, transactions: StatementTransaction[] }>> {
@@ -392,10 +416,7 @@ export async function parsePdfStatements (): Promise<null | Array<{ account: Sta
       throw new TemporaryError('Максимальный размер файла - 1 мб')
     }
   }
-  const pdfStrings = await Promise.all(blob.map(async (blob) => {
-    const { text } = await parsePdf(blob)
-    return text
-  }))
+  const pdfStrings = await readPdfTextsSequentially(blob)
   const result = []
   for (const textItem of pdfStrings) {
     console.log(textItem)

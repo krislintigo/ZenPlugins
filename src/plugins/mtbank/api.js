@@ -159,7 +159,7 @@ function formatDate (date) {
 }
 
 export function createDateIntervals (fromDate, toDate) {
-  const interval = 10 * 24 * 60 * 60 * 1000 // 10 days interval for fetching data
+  const interval = 20 * 24 * 60 * 60 * 1000 // 20-day interval for fetching data
   const gapMs = 1
   return commonCreateDateIntervals({
     fromDate,
@@ -171,38 +171,35 @@ export function createDateIntervals (fromDate, toDate) {
 
 export async function fetchTransactions (sessionCookies, accounts, fromDate, toDate = new Date()) {
   console.log('>>> Загрузка списка транзакций...')
-  toDate = toDate || new Date()
 
-  const dates = createDateIntervals(fromDate, toDate)
-  const responses = await Promise.all(flatMap(accounts, (account) => {
-    return dates.map(dates => {
+  const intervals = createDateIntervals(fromDate, toDate || new Date())
+  const operations = []
+
+  for (const account of accounts) {
+    const responses = await Promise.all(intervals.map(([startDate, endDate]) => {
       return fetchApiJson('product/loadOperationStatements', {
         method: 'POST',
         headers: { Cookie: sessionCookies },
         body: {
           contractCode: account.id,
           accountIdenType: account.productType,
-          startDate: formatDate(dates[0]),
-          endDate: formatDate(dates[1]),
+          startDate: formatDate(startDate),
+          endDate: formatDate(endDate),
           halva: false
         }
       }, response => response.body)
-    })
-  }))
+    }))
 
-  const operations = flatMap(responses, response => {
-    if (response) {
-      return flatMap(response.body.data, d => {
-        return d.operations.map(op => {
-          op.accountId = d.accountId
-          if (op.description === null) {
-            op.description = ''
-          }
-          return op
-        })
-      })
+    for (const response of responses) {
+      if (!response) continue
+
+      operations.push(...flatMap(response.body.data, d => d.operations.map(op => ({
+        ...op,
+        accountId: d.accountId,
+        description: op.description || ''
+      }))))
     }
-  })
+  }
 
   const filteredOperations = operations.filter(function (op) {
     const date = op.transDate ? getDate(op.transDate) : getDate(`${op.operationDate} 00:00:00`)

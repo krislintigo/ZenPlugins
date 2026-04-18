@@ -300,7 +300,8 @@ export enum TransactionType {
 export enum OperationType {
   ConversionRu = 'Безналичная конвертация',
   ConversionKa = 'უნაღდო კონვერტაცია',
-  ConversionEn = 'Currency conversion'
+  ConversionEn = 'Currency conversion',
+  ExchangeEn = 'Currency exchange'
 }
 
 // Отображение транзакции для пользователя. Меняется при смене языка
@@ -316,6 +317,7 @@ export enum OperationType {
 export interface Transaction {
   credit: number | null
   currency: string // USD, INR, RUB, EUR, ...
+  operationId?: string | null
   transactionType: TransactionType | null //  can be null on Accrued interest payment
   transactionId: string // on blocked transaction differs from all others
   debit: number | null

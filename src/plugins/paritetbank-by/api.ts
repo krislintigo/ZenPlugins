@@ -35,8 +35,8 @@ export const getAccounts = async ({ sessionToken }: { sessionToken: string }): P
   }
 
   return [
-    ...data.cardAccount.map((acc) => convertCardAccount(acc)),
-    ...data.currentAccount.map((acc) => convertCurrentAccount(acc))
+    ...(data.cardAccount ?? []).map((acc) => convertCardAccount(acc)),
+    ...(data.currentAccount ?? []).map((acc) => convertCurrentAccount(acc))
   ]
 }
 
@@ -54,7 +54,7 @@ export const getTransactions = async ({ sessionToken, fromDate, toDate }: { sess
     throw new BankMessageError(error.message)
   }
 
-  return data.operationHistory
+  return (data.operationHistory ?? [])
     .filter((op) => op.amount)
     .map((op) => convertTransaction(op, account))
 }
