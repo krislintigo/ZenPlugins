@@ -1,12 +1,32 @@
 import { BASE_API_URL } from './models'
-import { fetchJson } from '../../common/network'
+import { fetchJson, FetchOptions, FetchResponse } from '../../common/network'
 import type * as T from './types/fetch.types'
 import { FetchError, FetchOutput } from './types/base.types'
 
 const makeUrl = (url: string): string => `${BASE_API_URL}/${url}`
 
+const fetchApi = async (url: string, options: FetchOptions): Promise<FetchResponse> => {
+  return await fetchJson(url, {
+    ...options,
+    sanitizeRequestLog: {
+      headers: {
+        Authorization: true
+      },
+      body: {
+        login: true,
+        password: true
+      }
+    },
+    sanitizeResponseLog: {
+      body: {
+        sessionToken: true
+      }
+    }
+  })
+}
+
 export const fetchLogin = async ({ login, password }: T.AuthenticateInput): Promise<FetchOutput<T.AuthenticateOutput>> => {
-  const { status, body } = await fetchJson(makeUrl('/users/auth/login'), {
+  const { status, body } = await fetchApi(makeUrl('/users/auth/login'), {
     method: 'POST',
     body: {
       login,
@@ -29,7 +49,7 @@ export const fetchLogin = async ({ login, password }: T.AuthenticateInput): Prom
 }
 
 export const fetchAccounts = async ({ sessionToken }: T.FetchAccountsInput): Promise<FetchOutput<T.FetchAccountsOutput>> => {
-  const { status, body } = await fetchJson(makeUrl('/products?refresh=true'), {
+  const { status, body } = await fetchApi(makeUrl('/products?refresh=true'), {
     headers: {
       Authorization: sessionToken
     }
@@ -43,7 +63,7 @@ export const fetchAccounts = async ({ sessionToken }: T.FetchAccountsInput): Pro
 }
 
 export const fetchCardTransactions = async ({ sessionToken, from, to, cardId }: T.FetchTransactionsInput): Promise<FetchOutput<T.FetchTransactionsOutput>> => {
-  const { status, body } = await fetchJson(makeUrl('/cards/history'), {
+  const { status, body } = await fetchApi(makeUrl('/cards/history'), {
     method: 'POST',
     headers: {
       Authorization: sessionToken
@@ -65,7 +85,7 @@ export const fetchCardTransactions = async ({ sessionToken, from, to, cardId }: 
 }
 
 export const fetchProductStatement = async ({ sessionToken, from, to, productId }: T.FetchProductStatementInput): Promise<FetchOutput<T.FetchProductStatementOutput>> => {
-  const { status, body } = await fetchJson(makeUrl('/products/statement'), {
+  const { status, body } = await fetchApi(makeUrl('/products/statement'), {
     method: 'POST',
     headers: {
       Authorization: sessionToken
