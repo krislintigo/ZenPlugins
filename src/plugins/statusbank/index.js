@@ -27,9 +27,10 @@ export async function scrape ({ preferences, fromDate, toDate }) {
   const transactionsStatement = []
   accounts = await Promise.all(accounts.map(async account => {
     if (account._meta.statementExecutionId) {
+      console.log('Receive for', account.title)
       const htmls = await fetchFullTransactions(token, account, fromDate, toDate)
-      console.log('MAILD', htmls)
       const transactions = parseTransactions(htmls)
+      console.log('Parsed for', account.title, transactions)
       for (const apiTransaction of transactions) {
         const transaction = convertTransaction(apiTransaction, account)
         if (transaction) {

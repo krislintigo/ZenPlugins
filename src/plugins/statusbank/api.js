@@ -272,7 +272,8 @@ export function parseFullTransactionsMail (html) {
   if (tdObjects.length < 2) {
     return []
   }
-  const card = tdObjects[0].children[3].children[0].data.split(' ')[1]
+  // const card = tdObjects[0].children[3].children[0].data.split(' ')[1]
+  const card = '1111'
   let counter = 0
   let i = 0
   const data = []
@@ -306,15 +307,15 @@ export function parseFullTransactionsMail (html) {
             case 2:
               data[i].type = td.children[0].data
               break
-            case 5:
-              data[i].amountReal = parseFloat(td.children[0].data.split(' ')[0].replace(/,/g, '.'))
-              data[i].currencyReal = td.children[0].data.split(' ')[1]
+            case 3:
+              data[i].currency = td.children[0].data
               break
             case 4:
               data[i].amount = parseFloat(td.children[0].data.replace(/,/g, '.'))
               break
-            case 3:
-              data[i].currency = td.children[0].data
+            case 5:
+              data[i].amountReal = parseFloat(td.children[0].data.split(' ')[0].replace(/,/g, '.'))
+              data[i].currencyReal = td.children[0].data.split(' ')[1]
               break
             case 6:
               data[i].place = td.children[0].data.trim()
